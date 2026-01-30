@@ -211,12 +211,6 @@ const extraMenuItems = computed(() => [
   },
   { separator: true },
   {
-    key: 'browse-templates',
-    label: t('menuLabels.Browse Templates'),
-    icon: 'icon-[comfy--template]',
-    command: () => useWorkflowTemplateSelectorDialog().show('menu')
-  },
-  {
     key: 'settings',
     label: t('g.settings'),
     icon: 'icon-[lucide--settings]',
@@ -237,42 +231,22 @@ const extraMenuItems = computed(() => [
 
 const translatedItems = computed(() => {
   const items = menuItemStore.menuItems.map(translateMenuItem)
-  let helpIndex = items.findIndex((item) => item.key === 'Help')
-  let helpItem: MenuItem | undefined
+  // Filter to only keep: New, File, Edit, View
+  const allowedMenus = ['File', 'Edit', 'View']
+  const filteredItems: MenuItem[] = []
+  
+  items.forEach((item) => {
+    // Keep items with no label (root level commands like New)
+    if (!item.label) {
+      filteredItems.push(item)
+    }
+    // Keep allowed menu groups (File, Edit, View)
+    else if (allowedMenus.includes(item.label)) {
+      filteredItems.push(item)
+    }
+  })
 
-  if (helpIndex !== -1) {
-    items[helpIndex].icon = 'mdi mdi-help-circle-outline'
-    // If help is not the last item (i.e. we have extension commands), separate them
-    const isLastItem = helpIndex !== items.length - 1
-    helpItem = items.splice(
-      helpIndex,
-      1,
-      ...(isLastItem
-        ? [
-            {
-              separator: true
-            }
-          ]
-        : [])
-    )[0]
-  }
-  helpIndex = items.length
-
-  items.splice(
-    helpIndex,
-    0,
-    ...extraMenuItems.value,
-    ...(helpItem
-      ? [
-          {
-            separator: true
-          },
-          helpItem
-        ]
-      : [])
-  )
-
-  return items
+  return filteredItems
 })
 
 const onMenuShow = () => {

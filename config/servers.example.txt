@@ -1,0 +1,19 @@
+# ComfyUI Backend Servers Configuration
+# Format: One URL per line
+# Comments starting with # are ignored
+# Supports range notation: [start-end] expands to multiple URLs
+
+# Primary compute cluster
+http://compute-node[1-100]:8188
+
+# GPU acceleration servers
+http://gpu-worker[1-50]:8188
+
+# Secondary data center
+http://backup-dc[1-30]:8188
+
+# Archive/low-priority processing
+http://archive[1-10]:8188
+
+# Development/staging servers
+http://dev-server[1-5]:8188

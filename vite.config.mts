@@ -40,6 +40,167 @@ const VITE_OG_KEYWORDS = 'ComfyUI, Comfy Cloud, ComfyUI online'
 
 // Auto-detect cloud mode from DEV_SERVER_COMFYUI_URL
 const DEV_SERVER_COMFYUI_ENV_URL = process.env.DEV_SERVER_COMFYUI_URL
+const DEV_SERVER_COMFYUI_FILE = process.env.DEV_SERVER_COMFYUI_FILE
+
+// Expand URL range expressions like http://server[1-10]:8188 -> [http://server1:8188, ..., http://server10:8188]
+const expandUrlRange = (urlTemplate: string): string[] => {
+  const rangeRegex = /\[(\d+)-(\d+)\]/
+  const match = urlTemplate.match(rangeRegex)
+
+  if (!match) {
+    return [urlTemplate]
+  }
+
+  const [fullMatch, startStr, endStr] = match
+  const start = parseInt(startStr, 10)
+  const end = parseInt(endStr, 10)
+  const urls: string[] = []
+
+  if (start > end) {
+    console.warn(
+      `Invalid range in URL template: ${urlTemplate}. Start (${start}) > End (${end})`
+    )
+    return [urlTemplate]
+  }
+
+  for (let i = start; i <= end; i++) {
+    const expandedUrl = urlTemplate.replace(fullMatch, i.toString())
+    urls.push(expandedUrl)
+  }
+
+  return urls
+}
+
+// Parse multiple URLs for load balancing (comma or semicolon separated)
+// Supports:
+// 1. Direct URLs: http://server1:8188,http://server2:8188
+// 2. Range notation: http://server[1-100]:8188
+// 3. File path: file:///path/to/urls.json or file:///path/to/urls.txt
+const parseServerUrls = (urlString: string): string[] => {
+  if (!urlString) return []
+
+  // Handle file loading
+  if (urlString.startsWith('file://')) {
+    try {
+      const filePath = urlString.replace(/^file:\/\//, '')
+      console.log(`[LoadBalancer] Loading servers from file: ${filePath}`)
+
+      if (!require('fs').existsSync(filePath)) {
+        console.error(`[LoadBalancer] File not found: ${filePath}`)
+        return []
+      }
+
+      const fileContent = require('fs').readFileSync(filePath, 'utf-8')
+
+      // Try to parse as JSON first (array of URLs)
+      if (filePath.endsWith('.json')) {
+        try {
+          const parsed = JSON.parse(fileContent)
+
+          // Handle array format
+          if (Array.isArray(parsed)) {
+            const urls = parsed
+              .flat()
+              .map((url) => {
+                if (typeof url === 'string') {
+                  return url.trim()
+                }
+                return ''
+              })
+              .filter((url) => url.length > 0)
+
+            console.log(
+              `[LoadBalancer] Loaded ${urls.length} servers from JSON array`
+            )
+            return urls
+          }
+
+          // Handle object format (legacy) - extract URLs from object values
+          if (typeof parsed === 'object' && parsed !== null) {
+            const urls = Object.values(parsed)
+              .flat()
+              .map((url) => {
+                if (typeof url === 'string') {
+                  return url.trim()
+                }
+                return ''
+              })
+              .filter((url) => url.length > 0)
+
+            if (urls.length > 0) {
+              console.log(
+                `[LoadBalancer] Loaded ${urls.length} servers from JSON object values`
+              )
+              return urls
+            }
+          }
+
+          console.warn(
+            `[LoadBalancer] JSON format not recognized. Expected array or object with URL values.`
+          )
+        } catch (parseError) {
+          console.error(`[LoadBalancer] Failed to parse JSON file: ${parseError}`)
+        }
+      }
+
+      // Otherwise parse as newline-separated URLs
+      const urls = fileContent
+        .split('\n')
+        .map((line) => line.trim())
+        .filter((line) => line.length > 0 && !line.startsWith('#'))
+
+      console.log(
+        `[LoadBalancer] Loaded ${urls.length} servers from text file`
+      )
+      return urls
+    } catch (error) {
+      console.error(
+        `[LoadBalancer] Failed to read URLs from file ${urlString}:`,
+        error
+      )
+      return []
+    }
+  }
+
+  // Parse direct URL specifications
+  const baseUrls = urlString
+    .split(/[,;]\s*/)
+    .map((url) => url.trim())
+    .filter((url) => url.length > 0)
+
+  // Expand any range notation
+  const allUrls = baseUrls
+    .flatMap((url) => expandUrlRange(url))
+    .filter((url) => url.length > 0)
+
+  return allUrls
+}
+
+const SERVER_URLS = DEV_SERVER_COMFYUI_FILE
+  ? parseServerUrls(DEV_SERVER_COMFYUI_FILE)
+  : DEV_SERVER_COMFYUI_ENV_URL
+    ? parseServerUrls(DEV_SERVER_COMFYUI_ENV_URL)
+    : []
+
+// Log server count for debugging
+if (SERVER_URLS.length > 1) {
+  console.log(
+    `[LoadBalancer] Configured with ${SERVER_URLS.length} backend servers`
+  )
+}
+
+let currentServerIndex = 0
+
+// Round-robin load balancer
+const getNextServerUrl = (): string => {
+  if (SERVER_URLS.length === 0) {
+    return ''
+  }
+  const url = SERVER_URLS[currentServerIndex]
+  currentServerIndex = (currentServerIndex + 1) % SERVER_URLS.length
+  return url
+}
+
 const IS_CLOUD_URL = DEV_SERVER_COMFYUI_ENV_URL?.includes('.comfy.org')
 
 const DISTRIBUTION: 'desktop' | 'localhost' | 'cloud' =
@@ -71,10 +232,55 @@ const DEV_SEVER_FALLBACK_URL =
     : 'http://127.0.0.1:8188'
 
 const DEV_SERVER_COMFYUI_URL =
-  DEV_SERVER_COMFYUI_ENV_URL || DEV_SEVER_FALLBACK_URL
+  SERVER_URLS.length > 0 ? SERVER_URLS[0] : DEV_SEVER_FALLBACK_URL
 
 const cloudProxyConfig =
   DISTRIBUTION === 'cloud' ? { secure: false, changeOrigin: true } : {}
+
+// Create a custom router for load balancing across multiple servers
+// Implements hash-based routing: same client IP always goes to same server
+// This ensures all requests from one browser tab use the same backend
+const createLoadBalancedProxyRouter = () => {
+  const serverUrls = SERVER_URLS.length > 0 ? SERVER_URLS : [DEV_SERVER_COMFYUI_URL]
+  
+  // Track request count for round-robin logging
+  let globalRequestCount = 0
+  
+  // Hash function for client-based routing (consistent hashing)
+  const getServerForClient = (clientIp: string): string => {
+    // Simple hash: sum of character codes
+    let hash = 0
+    for (let i = 0; i < clientIp.length; i++) {
+      hash += clientIp.charCodeAt(i)
+    }
+    const index = hash % serverUrls.length
+    return serverUrls[index]
+  }
+
+  return (req: IncomingMessage) => {
+    // Get client IP from request
+    const clientIp =
+      (req.headers['x-forwarded-for'] as string)?.split(',')[0] ||
+      (req.headers['x-real-ip'] as string) ||
+      req.socket?.remoteAddress ||
+      'unknown'
+
+    const url = getServerForClient(clientIp)
+    globalRequestCount++
+
+    // Log with more details
+    const method = req.method
+    const path = req.url
+    const indicator = globalRequestCount % serverUrls.length === 0 ? ' (load balanced)' : ''
+    
+    console.log(
+      `[LoadBalancer] ${method} ${path} → ${url} [client: ${clientIp}]${indicator}`
+    )
+    return url
+  }
+}
+
+const loadBalancedRouter = createLoadBalancedProxyRouter()
 
 function handleGcsRedirect(
   proxyRes: IncomingMessage,
@@ -134,6 +340,7 @@ function handleGcsRedirect(
 
 const gcsRedirectProxyConfig: ProxyOptions = {
   target: DEV_SERVER_COMFYUI_URL,
+  router: loadBalancedRouter,
   ...cloudProxyConfig,
   selfHandleResponse: true,
   configure: (proxy) => {
@@ -166,6 +373,7 @@ export default defineConfig({
     proxy: {
       '/internal': {
         target: DEV_SERVER_COMFYUI_URL,
+        router: loadBalancedRouter,
         ...cloudProxyConfig
       },
 
@@ -178,6 +386,7 @@ export default defineConfig({
 
       '/api': {
         target: DEV_SERVER_COMFYUI_URL,
+        router: loadBalancedRouter,
         ...cloudProxyConfig,
         bypass: (req, res, _options) => {
           if (!res) return null
@@ -202,23 +411,27 @@ export default defineConfig({
 
       '/ws': {
         target: DEV_SERVER_COMFYUI_URL,
+        router: loadBalancedRouter,
         ws: true,
         ...cloudProxyConfig
       },
 
       '/workflow_templates': {
         target: DEV_SERVER_COMFYUI_URL,
+        router: loadBalancedRouter,
         ...cloudProxyConfig
       },
 
       '/extensions': {
         target: DEV_SERVER_COMFYUI_URL,
+        router: loadBalancedRouter,
         changeOrigin: true,
         ...cloudProxyConfig
       },
 
       '/docs': {
         target: DEV_SERVER_COMFYUI_URL,
+        router: loadBalancedRouter,
         changeOrigin: true,
         ...cloudProxyConfig
       },
@@ -227,6 +440,7 @@ export default defineConfig({
         ? {
             '/templates': {
               target: DEV_SERVER_COMFYUI_URL,
+              router: loadBalancedRouter,
               ...cloudProxyConfig
             }
           }

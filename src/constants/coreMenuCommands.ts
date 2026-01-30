@@ -28,15 +28,5 @@ export const CORE_MENU_COMMANDS = [
           ])
     ]
   ],
-  [['View'], []],
-  [
-    ['Help'],
-    [
-      'Comfy.Help.OpenComfyUIIssues',
-      'Comfy.Help.OpenComfyUIDocs',
-      'Comfy.Help.OpenComfyOrgDiscord',
-      'Comfy.Help.OpenComfyUIForum'
-    ]
-  ],
-  [['Help'], ['Comfy.Help.AboutComfyUI', 'Comfy.ContactSupport']]
+  [['View'], []]
 ]

@@ -32,21 +32,10 @@
           :class="tab.id + '-tab-button'"
           @click="onTabClick(tab)"
         />
-        <SidebarTemplatesButton />
       </div>
 
       <div ref="bottomToolbarRef" class="mt-auto" :class="groupClasses">
-        <SidebarLogoutIcon
-          v-if="userStore.isMultiUserServer"
-          :is-small="isSmall"
-        />
-        <SidebarHelpCenterIcon v-if="!isIntegratedTabBar" :is-small="isSmall" />
-        <SidebarBottomPanelToggleButton :is-small="isSmall" />
         <SidebarShortcutsToggleButton :is-small="isSmall" />
-        <SidebarSettingsButton :is-small="isSmall" />
-        <ModeToggle
-          v-if="menuItemStore.hasSeenLinear || flags.linearToggleEnabled"
-        />
       </div>
     </div>
     <HelpCenterPopups :is-small="isSmall" />
@@ -109,7 +98,9 @@ const isConnected = computed(
     sidebarStyle.value === 'connected'
 )
 
-const tabs = computed(() => workspaceStore.getSidebarTabs())
+const tabs = computed(() => 
+  workspaceStore.getSidebarTabs().filter((tab) => tab.id !== 'workflows')
+)
 const selectedTab = computed(() => workspaceStore.sidebarTab.activeSidebarTab)
 
 /**

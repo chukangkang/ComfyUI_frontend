@@ -1,0 +1,46 @@
+【正确的 JSON 格式说明】
+
+关键问题：你的 JSON 格式是对象 {}, 应该改为数组 []
+
+❌ 错误格式（你当前的格式）:
+{
+  "http://ssh-hde.xingluan.cn:20040"
+}
+
+✅ 正确格式 - 单个 URL：
+[
+  "http://ssh-hde.xingluan.cn:20040"
+]
+
+✅ 正确格式 - 多个 URL：
+[
+  "http://server1:8188",
+  "http://server2:8188",
+  "http://server3:8188"
+]
+
+✅ 支持范围表示法：
+[
+  "http://server[1-100]:8188",
+  "http://backup[1-20]:8188"
+]
+
+✅ 混合使用：
+[
+  "http://server1:8188",
+  "http://server2:8188",
+  "http://server[3-50]:8188"
+]
+
+====================================
+
+请将你的 /root/servers.json 修改为：
+
+[
+  "http://ssh-hde.xingluan.cn:20040"
+]
+
+然后在 .env 中使用：
+DEV_SERVER_COMFYUI_FILE=file:///root/servers.json
+
+（确保 DEV_SERVER_COMFYUI_URL 那一行被注释或删除）

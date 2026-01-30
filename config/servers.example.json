@@ -1,0 +1,5 @@
+[
+  "http://worker[1-100]:8188",
+  "http://gpu-server[1-50]:8188",
+  "http://backup[1-20]:8188"
+]

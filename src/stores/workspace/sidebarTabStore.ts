@@ -102,9 +102,9 @@ export const useSidebarTabStore = defineStore('sidebarTab', () => {
    * Register the core sidebar tabs.
    */
   const registerCoreSidebarTabs = () => {
-    registerSidebarTab(useAssetsSidebarTab())
-    registerSidebarTab(useNodeLibrarySidebarTab())
-    registerSidebarTab(useModelLibrarySidebarTab())
+    // registerSidebarTab(useAssetsSidebarTab())
+    // registerSidebarTab(useNodeLibrarySidebarTab())
+    // registerSidebarTab(useModelLibrarySidebarTab())
     registerSidebarTab(useWorkflowsSidebarTab())
 
     const menuStore = useMenuItemStore()
